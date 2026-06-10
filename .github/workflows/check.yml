@@ -1,0 +1,33 @@
+name: Check Quakes
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # every 5 minutes
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - run: python check_quakes.py
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          LAT: ${{ secrets.LAT }}
+          LON: ${{ secrets.LON }}
+          PLACE: ${{ secrets.PLACE }}
+          RADIUS_MILES: ${{ secrets.RADIUS_MILES }}
+          MIN_MAGNITUDE: ${{ secrets.MIN_MAGNITUDE }}
+          TIMEZONE: ${{ secrets.TIMEZONE }}
+      - name: Commit seen.json if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add seen.json
+          git diff --cached --quiet || git commit -m "Update seen quakes" && git push
