@@ -62,19 +62,27 @@ def notify(quake):
     mag = props.get('mag') or 0
     place = props.get('place') or 'location unknown'
     when = datetime.fromtimestamp(props['time'] / 1000, tz=ZoneInfo(TIMEZONE))
+    depth_text = f", {depth_km:.0f} km deep" if depth_km is not None else ""
     message = (
         f"{when.strftime('%a %-I:%M %p %Z')} - "
-        f"{miles_away(qlat, qlon):.0f} mi from {PLACE}, {depth_km:.0f} km deep"
+        f"{miles_away(qlat, qlon):.0f} mi from {PLACE}{depth_text}"
     )
-    requests.post(
-        f'https://ntfy.sh/{NTFY_TOPIC}',
-        data=message.encode(),
-        headers={
-            'Title': f'M{mag:.1f} earthquake: {place}'.encode(),
-            'Priority': 'urgent' if mag >= 5.5 else 'high',
-            'Click': props.get('url') or 'https://earthquake.usgs.gov/earthquakes/map/',
-        },
-    )
+    try:
+        resp = requests.post(
+            f'https://ntfy.sh/{NTFY_TOPIC}',
+            data=message.encode(),
+            headers={
+                'Title': f'M{mag:.1f} earthquake: {place}'.encode(),
+                'Priority': 'urgent' if mag >= 5.5 else 'high',
+                'Click': props.get('url') or 'https://earthquake.usgs.gov/earthquakes/map/',
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"ntfy error: {e}")
+        return False
 
 
 def main():
@@ -86,10 +94,12 @@ def main():
     print(f"{len(quakes)} quakes M{MIN_MAGNITUDE}+ within {RADIUS_MILES:.0f} mi in last 24h, {len(new)} new")
 
     for quake in sorted(new, key=lambda q: q['properties']['time']):
-        notify(quake)
-        alerted.append(quake['id'])
         props = quake['properties']
-        print(f"Alerted: {quake['id']} M{props.get('mag')} {props.get('place')}")
+        if notify(quake):
+            alerted.append(quake['id'])
+            print(f"Alerted: {quake['id']} M{props.get('mag')} {props.get('place')}")
+        else:
+            print(f"Notification failed for {quake['id']}, will retry next run")
 
     if new:
         state['alerted_ids'] = alerted[-500:]
